@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "crumbtrail",
+  "version": "${version}",
+  "name": "Crumbtrail",
+  "description": "Save a spot with /crumb save, get an on-screen arrow back to it with /crumb go. Auto-saves where you die. Client-side: works on any server.",
+  "authors": ["devtopher"],
+  "license": "MIT",
+  "icon": "assets/crumbtrail/icon.png",
+  "environment": "client",
+  "entrypoints": {
+    "client": ["dev.toaster.crumbtrail.CrumbtrailClient"]
+  },
+  "depends": {
+    "fabricloader": ">=0.20.0",
+    "minecraft": "~26.3",
+    "java": ">=25",
+    "fabric-api": "*"
+  }
+}
