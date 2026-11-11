@@ -26,8 +26,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.text.DateFormat;
-import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 
@@ -71,9 +69,9 @@ public final class CrumbtrailClient implements ClientModInitializer {
 		SuggestionProvider<FabricClientCommandSource> names = (ctx, builder) -> {
 			String typed = builder.getRemaining().toLowerCase(Locale.ROOT);
 			String key = worldKey();
+			if (STORE.latestDeath(key) != null && "death".startsWith(typed)) builder.suggest("death");
 			for (CoordStore.Entry e : STORE.get(key)) {
-				String name = STORE.nameOf(key, e);
-				if (name.toLowerCase(Locale.ROOT).startsWith(typed)) builder.suggest(name);
+				if (e.label().toLowerCase(Locale.ROOT).startsWith(typed)) builder.suggest(e.label());
 			}
 			return builder.buildFuture();
 		};
@@ -103,22 +101,25 @@ public final class CrumbtrailClient implements ClientModInitializer {
 	private static void recordDeath(LocalPlayer player) {
 		BlockPos pos = player.blockPosition();
 		String dim = player.level().dimension().identifier().toString();
-		long now = System.currentTimeMillis();
-		String when = DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(new Date(now));
-		CoordStore.Entry entry = new CoordStore.Entry("Death (" + when + ")", pos.getX(), pos.getY(), pos.getZ(),
-				dim, now, true);
+		// Named after the biome, e.g. death-plains, death-deep-dark. The store adds -2, -3 if needed.
+		String biome = player.level().getBiome(pos).unwrapKey()
+				.map(k -> k.identifier().getPath().replace('_', '-')).orElse("unknown");
+		CoordStore.Entry entry = new CoordStore.Entry("death-" + biome, pos.getX(), pos.getY(), pos.getZ(),
+				dim, System.currentTimeMillis(), true);
 		try {
-			if (!STORE.addDeath(worldKey(), entry)) return;
+			entry = STORE.addDeath(worldKey(), entry);
 		} catch (IOException e) {
 			LOGGER.error("Failed to save death point", e);
 			return;
 		}
-		player.sendSystemMessage(Component.literal("Death point saved at " + coords(entry) + ". ")
-				.withStyle(ChatFormatting.GRAY)
+		if (entry == null) return;
+		player.sendSystemMessage(Component.literal("Death point saved as ").withStyle(ChatFormatting.GRAY)
+				.append(Component.literal(entry.label()).withStyle(ChatFormatting.RED))
+				.append(Component.literal(" at " + coords(entry) + ". ").withStyle(ChatFormatting.GRAY))
 				.append(Component.literal("[Show the way back]").withStyle(style -> style
 						.withColor(ChatFormatting.YELLOW)
-						.withClickEvent(new ClickEvent.RunCommand("/crumb go death-1"))
-						.withHoverEvent(new HoverEvent.ShowText(Component.literal("/crumb go death-1"))))));
+						.withClickEvent(new ClickEvent.RunCommand("/crumb go death"))
+						.withHoverEvent(new HoverEvent.ShowText(Component.literal("/crumb go death"))))));
 	}
 
 	// ---- commands ----
@@ -126,7 +127,7 @@ public final class CrumbtrailClient implements ClientModInitializer {
 	private static int save(CommandContext<FabricClientCommandSource> ctx, String rawName) {
 		FabricClientCommandSource src = ctx.getSource();
 		String name = rawName.trim();
-		if (name.toLowerCase(Locale.ROOT).matches("death(-\\d+)?|\\d+")) {
+		if (name.toLowerCase(Locale.ROOT).matches("death(-.*)?|\\d+")) {
 			src.sendError(Component.literal("\"" + name + "\" is reserved. Pick another name."));
 			return 0;
 		}
@@ -164,7 +165,7 @@ public final class CrumbtrailClient implements ClientModInitializer {
 		// Oldest first so the newest lands at the bottom, nearest the chat box.
 		for (int i = 0; i < entries.size(); i++) {
 			CoordStore.Entry e = entries.get(i);
-			String name = STORE.nameOf(key, e);
+			String name = e.label();
 			MutableComponent line = Component.literal("#" + (i + 1) + " ").withStyle(ChatFormatting.DARK_GRAY)
 					.append(Component.literal(name).withStyle(e.death() ? ChatFormatting.RED : ChatFormatting.WHITE))
 					.append(Component.literal(": " + e.x() + " " + e.y() + " " + e.z()).withStyle(ChatFormatting.AQUA))
@@ -194,7 +195,7 @@ public final class CrumbtrailClient implements ClientModInitializer {
 		}
 		Navigator.start(m.entry());
 		src.sendFeedback(Component.literal("Showing the way to ").withStyle(ChatFormatting.GREEN)
-				.append(Component.literal(STORE.nameOf(key, m.entry())).withStyle(ChatFormatting.WHITE))
+				.append(Component.literal(m.entry().label()).withStyle(ChatFormatting.WHITE))
 				.append(Component.literal(". /crumb stop to hide.").withStyle(ChatFormatting.GRAY)));
 		return 1;
 	}
@@ -213,7 +214,7 @@ public final class CrumbtrailClient implements ClientModInitializer {
 			src.sendError(Component.literal(m.error()));
 			return 0;
 		}
-		String name = STORE.nameOf(key, m.entry());
+		String name = m.entry().label();
 		try {
 			STORE.remove(key, m.entry());
 		} catch (IOException e) {
@@ -241,11 +242,6 @@ public final class CrumbtrailClient implements ClientModInitializer {
 
 	private static String coords(CoordStore.Entry e) {
 		return e.x() + ", " + e.y() + ", " + e.z();
-	}
-
-	/** The name shown to the player: the spot's label, or death-1, death-2, ... for death points. */
-	static String displayName(CoordStore.Entry e) {
-		return STORE.nameOf(worldKey(), e);
 	}
 
 	static String dimName(String id) {

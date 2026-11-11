@@ -35,7 +35,7 @@ public final class Navigator {
 		if (!sameDimension(player)) return;
 		if (horizontalDistance(player) <= ARRIVE_DISTANCE) {
 			player.sendSystemMessage(Component.literal("You've arrived at ").withStyle(ChatFormatting.GREEN)
-					.append(Component.literal(CrumbtrailClient.displayName(target)).withStyle(ChatFormatting.WHITE)));
+					.append(Component.literal(target.label()).withStyle(ChatFormatting.WHITE)));
 			target = null;
 		}
 	}
@@ -48,7 +48,7 @@ public final class Navigator {
 
 		Component line;
 		if (!sameDimension(player)) {
-			line = Component.literal(CrumbtrailClient.displayName(target)).withStyle(ChatFormatting.WHITE)
+			line = Component.literal(target.label()).withStyle(ChatFormatting.WHITE)
 					.append(Component.literal(" is in the " + CrumbtrailClient.dimName(target.dimension()))
 							.withStyle(ChatFormatting.GRAY));
 		} else {
@@ -60,7 +60,7 @@ public final class Navigator {
 			String arrow = ARROWS[Math.floorMod((int) Math.round(relative / 45.0), 8)];
 
 			var built = Component.literal(arrow + " ").withStyle(ChatFormatting.YELLOW)
-					.append(Component.literal(CrumbtrailClient.displayName(target)).withStyle(ChatFormatting.WHITE))
+					.append(Component.literal(target.label()).withStyle(ChatFormatting.WHITE))
 					.append(Component.literal(" · " + Math.round(Math.sqrt(dx * dx + dz * dz)) + " blocks")
 							.withStyle(ChatFormatting.AQUA));
 			int dy = target.y() - Mth.floor(player.getY());

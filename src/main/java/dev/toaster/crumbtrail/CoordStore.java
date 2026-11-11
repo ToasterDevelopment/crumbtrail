@@ -35,18 +35,13 @@ public final class CoordStore {
 		return entries;
 	}
 
-	/** The name you type for an entry: its label, or death-1 (most recent), death-2, ... for deaths. */
-	public String nameOf(String worldKey, Entry entry) {
+	/** The most recent death point, or null. This is what "death" means in /crumb go death. */
+	public Entry latestDeath(String worldKey) {
 		load(worldKey);
-		if (!entry.death()) return entry.label();
-		int n = 0;
 		for (int i = entries.size() - 1; i >= 0; i--) {
-			if (entries.get(i).death()) {
-				n++;
-				if (entries.get(i) == entry) return "death-" + n;
-			}
+			if (entries.get(i).death()) return entries.get(i);
 		}
-		return "death";
+		return null;
 	}
 
 	/** Saves a spot. A spot with the same name (ignoring case) is replaced. Returns true if it replaced one. */
@@ -60,17 +55,18 @@ public final class CoordStore {
 
 	/**
 	 * Adds a death point, skipping exact repeats (e.g. rejoining while still on the death screen)
-	 * and trimming the oldest death points beyond {@link #MAX_DEATHS}. Returns false if skipped.
+	 * and trimming the oldest death points beyond {@link #MAX_DEATHS}. The entry's label is used as a
+	 * base name (e.g. "death-plains"); "-2", "-3", ... is added if that name is taken. The name never
+	 * changes afterwards. Returns the stored entry, or null if skipped.
 	 */
-	public boolean addDeath(String worldKey, Entry entry) throws IOException {
+	public Entry addDeath(String worldKey, Entry entry) throws IOException {
 		load(worldKey);
-		for (int i = entries.size() - 1; i >= 0; i--) {
-			Entry e = entries.get(i);
-			if (!e.death()) continue;
-			if (e.x() == entry.x() && e.y() == entry.y() && e.z() == entry.z()
-					&& e.dimension().equals(entry.dimension())) return false;
-			break; // only compare against the most recent death
-		}
+		Entry last = latestDeath(worldKey);
+		if (last != null && last.x() == entry.x() && last.y() == entry.y() && last.z() == entry.z()
+				&& last.dimension().equals(entry.dimension())) return null;
+		String name = entry.label();
+		for (int n = 2; isTaken(name); n++) name = entry.label() + "-" + n;
+		entry = new Entry(name, entry.x(), entry.y(), entry.z(), entry.dimension(), entry.savedAt(), true);
 		entries.add(entry);
 		long deaths = entries.stream().filter(Entry::death).count();
 		for (int i = 0; i < entries.size() && deaths > MAX_DEATHS; ) {
@@ -82,7 +78,11 @@ public final class CoordStore {
 			}
 		}
 		save();
-		return true;
+		return entry;
+	}
+
+	private boolean isTaken(String name) {
+		return entries.stream().anyMatch(e -> e.label().equalsIgnoreCase(name));
 	}
 
 	public void remove(String worldKey, Entry entry) throws IOException {
@@ -95,8 +95,8 @@ public final class CoordStore {
 	public record Match(Entry entry, String error) {}
 
 	/**
-	 * Finds an entry by list number ("3"), exact name ("cows by the river", "death-1"),
-	 * or a unique partial name ("cow").
+	 * Finds an entry by list number ("3"), "death" (the most recent death), exact name
+	 * ("cows by the river", "death-plains"), or a unique partial name ("cow").
 	 */
 	public Match find(String worldKey, String query) {
 		load(worldKey);
@@ -107,15 +107,19 @@ public final class CoordStore {
 			return n >= 1 && n <= entries.size() ? new Match(entries.get(n - 1), null)
 					: new Match(null, "No spot #" + n + ".");
 		}
+		if (q.equals("death")) {
+			Entry latest = latestDeath(worldKey);
+			if (latest != null) return new Match(latest, null);
+		}
 		List<Entry> partial = new ArrayList<>();
 		for (Entry e : entries) {
-			String name = nameOf(worldKey, e).toLowerCase(Locale.ROOT);
+			String name = e.label().toLowerCase(Locale.ROOT);
 			if (name.equals(q)) return new Match(e, null);
 			if (name.contains(q)) partial.add(e);
 		}
 		if (partial.size() == 1) return new Match(partial.getFirst(), null);
 		if (partial.isEmpty()) return new Match(null, "No spot named \"" + query.trim() + "\".");
-		List<String> names = partial.stream().map(e -> nameOf(worldKey, e)).toList();
+		List<String> names = partial.stream().map(Entry::label).toList();
 		return new Match(null, "\"" + query.trim() + "\" matches several: " + String.join(", ", names));
 	}
 
@@ -135,6 +139,30 @@ public final class CoordStore {
 			if (read != null) entries = new ArrayList<>(read);
 		} catch (Exception e) {
 			CrumbtrailClient.LOGGER.error("Could not read {}", file, e);
+		}
+		migrateOldDeathNames();
+	}
+
+	/**
+	 * Version 1.0.0 named deaths by recency (death-1 = newest), recomputed each time, with a
+	 * "Death (date)" label underneath. Freeze those as their current death-N so they stop shifting.
+	 */
+	private void migrateOldDeathNames() {
+		boolean changed = false;
+		int n = 0;
+		for (int i = entries.size() - 1; i >= 0; i--) {
+			Entry e = entries.get(i);
+			if (!e.death()) continue;
+			n++;
+			if (e.label().toLowerCase(Locale.ROOT).startsWith("death-")) continue;
+			entries.set(i, new Entry("death-" + n, e.x(), e.y(), e.z(), e.dimension(), e.savedAt(), true));
+			changed = true;
+		}
+		if (!changed) return;
+		try {
+			save();
+		} catch (IOException e) {
+			CrumbtrailClient.LOGGER.error("Could not save renamed death points", e);
 		}
 	}
 

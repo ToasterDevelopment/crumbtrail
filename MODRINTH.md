@@ -25,7 +25,7 @@ Found some cows? A good village? Your stuff after a bad fall into a ravine? Type
 | `/crumb stop` | Hide the arrow |
 | `/crumb delete <name>` | Remove a spot |
 
-Your last 5 deaths are kept as `death-1` (most recent) through `death-5`, so `/crumb go death-1` takes you back to where you just died.
+Deaths are named after the biome you died in, like `death-plains` or `death-deep-dark` (a second death in the same biome becomes `death-plains-2`). `/crumb go death` always takes you back to your most recent death. Your last 5 deaths are kept.
 
 ## Notes
 
