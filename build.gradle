@@ -1,5 +1,6 @@
 plugins {
 	id 'net.fabricmc.fabric-loom' version "${loom_version}"
+	id 'com.modrinth.minotaur' version '2.8.7'
 }
 
 base {
@@ -28,4 +29,32 @@ tasks.withType(JavaCompile).configureEach {
 java {
 	sourceCompatibility = JavaVersion.VERSION_25
 	targetCompatibility = JavaVersion.VERSION_25
+}
+
+// Publishing: `gradle modrinth` uploads this version, `gradle modrinthSyncBody` updates the project page
+// from MODRINTH.md. Needs a Modrinth personal access token in the MODRINTH_TOKEN environment variable.
+// Add -PmodrinthDryRun to check everything without uploading.
+modrinth {
+	token = System.getenv("MODRINTH_TOKEN")
+	projectId = "crumbtrail"
+	versionNumber = project.version
+	versionName = "Crumbtrail ${project.version}"
+	versionType = "release"
+	uploadFile = jar
+	gameVersions = [project.minecraft_version]
+	loaders = ["fabric"]
+	dependencies {
+		required.project "fabric-api"
+	}
+	changelog = changelogFor(project.version.toString())
+	syncBodyFrom = rootProject.file("MODRINTH.md").text
+	debugMode = providers.gradleProperty("modrinthDryRun").isPresent()
+}
+
+/** The "## <version>" section of CHANGELOG.md. */
+String changelogFor(String version) {
+	def section = rootProject.file("CHANGELOG.md").text.split(/(?m)^## /)
+			.find { it.startsWith(version + "\n") || it.startsWith(version + "\r") }
+	if (section == null) throw new GradleException("CHANGELOG.md has no '## ${version}' section")
+	return section.substring(version.length()).trim()
 }
